@@ -22,12 +22,15 @@ str(dataset)
 
 
 ## Appropriately labels the data set with descriptive variable names
+ordered_features <- get_data_from_path("features.txt")[, 2]
 dataset <- set_variable_names(dataset, features)
-str(dataset)
+save_in_file(dataset[, ordered_features], "tidy_dataset.txt")
+str(dataset[, ordered_features])
 
 
 ## From the data set in step 4, creates a second, independent tidy data set with the average of each variable for each activity and each subject
 average_dataset <- dataset %>%
                         group_by(activity, subject) %>%
                         summarise_all(funs(mean))
+save_in_file(average_dataset, "summary_dataset.txt")
 str(average_dataset)
