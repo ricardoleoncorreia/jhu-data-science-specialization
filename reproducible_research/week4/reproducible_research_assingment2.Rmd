@@ -1,5 +1,5 @@
 ---
-title: "Harmfulness for population health and economics consequences of natural disaster events"
+title: "Effects of natural events in health and economics"
 author: "Ricardo Leon"
 date: "January 17, 2020"
 output: html_document
@@ -16,7 +16,7 @@ The first step is to load the required libraries.
 - dplyr for data proccessing.
 - ggplot2 and RColorBrewer for plotting results.
 
-```{r results='hide'}
+```{r message=FALSE}
 library(dplyr)
 library(tidyr)
 library(ggplot2)
@@ -36,6 +36,49 @@ if (!file.exists(file_name)) {
 data <- read.csv("repdata_data_StormData.csv.bz2", header = TRUE, sep = ",", stringsAsFactors = FALSE)
 ```
 
+Looking at the data, it can be noticed that EVTYPE column values have many typos and synonyms for the same natural event. Using regular expressions and dplyr library, we will fix this issue. The procedure is as follows:
+
+- Remove rows with EVTYPE '?' and contains 'SUMMARY' as the first word.
+- Transform all letter to upper case.
+- Apply regular expression on the values belonging to the same group (it can be checked below).
+
+```{r eventtypes, cache=TRUE}
+data <- data %>%
+    filter(EVTYPE != "?", !grepl("^SUMMARY", EVTYPE)) %>%
+    mutate(EVTYPE = toupper(EVTYPE),
+           EVTYPE = replace(EVTYPE, grepl("WIND|WND|TURBULENCE", EVTYPE), "HIGH WINDS"),
+           EVTYPE = replace(EVTYPE, grepl("FLO{0,3}D|URBAN", EVTYPE), "FLOODS"),
+           EVTYPE = replace(EVTYPE, grepl("AVAL", EVTYPE), "AVALANCHES"),
+           EVTYPE = replace(EVTYPE, grepl("LIG(HTI|HTN|NTN)", EVTYPE), "LIGHTNINGS"),
+           EVTYPE = replace(EVTYPE, grepl("COLD|CHILL|LOW TEMP|COOL|FROST|HYPOTHERMIA|FREEZE", EVTYPE), "COLD TEMPERATURES"),
+           EVTYPE = replace(EVTYPE, grepl("HIGH TEMP|HOT|HYPERTHERMIA|HEAT", EVTYPE), "HIGH TEMPERATURES"),
+           EVTYPE = replace(EVTYPE, grepl("HIGH (SURF|SEAS|TIDE|WATER|WAVES)|SURF|SWELLS", EVTYPE), "HIGH TIDES"),
+           EVTYPE = replace(EVTYPE, grepl("BLOW-OUT TIDE|SURGE|SEAS", EVTYPE), "HIGH TIDES"),
+           EVTYPE = replace(EVTYPE, grepl("SNOW|BLIZ|WINT|ICE( STORM)?|FREEZ.*(RAIN|SPRAY|FOG|DRIZZLE)|SLEET", EVTYPE), "BLIZZARDS"),
+           EVTYPE = replace(EVTYPE, grepl("TSTM( WND|W)?|THU", EVTYPE), "THUNDERSTORMS"),
+           EVTYPE = replace(EVTYPE, grepl("WILD", EVTYPE), "FOREST FIRES"),
+           EVTYPE = replace(EVTYPE, grepl("DUST", EVTYPE), "DUST STORMS"),
+           EVTYPE = replace(EVTYPE, grepl("RAIN|SHOWER|PRECIP", EVTYPE), "RAIN"),
+           EVTYPE = replace(EVTYPE, grepl("WAY?TER.*(SPOUT)?", EVTYPE), "WATERSPOUTS"),
+           EVTYPE = replace(EVTYPE, grepl("VOL", EVTYPE), "VOLCANIC ERUPTION"),
+           EVTYPE = replace(EVTYPE, grepl("LANDSPOUT|TORN", EVTYPE), "TORNADOS"),
+           EVTYPE = replace(EVTYPE, grepl("HAIL.*(STORM)?", EVTYPE), "HAIL STORMS"),
+           EVTYPE = replace(EVTYPE, grepl("COAST.*STORM", EVTYPE), "COASTAL STORMS"),
+           EVTYPE = replace(EVTYPE, grepl("TROPICAL", EVTYPE), "TROPICAL STORMS"),
+           EVTYPE = replace(EVTYPE, grepl("WET", EVTYPE), "WET WEATHER"),
+           EVTYPE = replace(EVTYPE, grepl("WARM", EVTYPE), "WARM WEATHER"),
+           EVTYPE = replace(EVTYPE, grepl("SLIDE", EVTYPE), "LANDSLIDE"),
+           EVTYPE = replace(EVTYPE, grepl("HURRICANE|TYPHOON", EVTYPE), "HURRICANE/TYPHOON"),
+           EVTYPE = replace(EVTYPE, grepl("CLOUD", EVTYPE), "CLOUDS"),
+           EVTYPE = replace(EVTYPE, grepl("RIP", EVTYPE), "RIP CURRENTS"),
+           EVTYPE = replace(EVTYPE, grepl("EROSI", EVTYPE), "COASTAL EROSION"),
+           EVTYPE = replace(EVTYPE, grepl("FIRE", EVTYPE), "FIRES"),
+           EVTYPE = replace(EVTYPE, grepl("FOG", EVTYPE), "FOG"),
+           EVTYPE = replace(EVTYPE, grepl("DAM (BREAK|FAILURE)", EVTYPE), "DAM FAILURES"),
+           EVTYPE = replace(EVTYPE, grepl("SMOKE", EVTYPE), "SMOKE"),
+           EVTYPE = replace(EVTYPE, grepl("DR(Y|IEST|OUGHT)", EVTYPE), "DROUGHT"))
+```
+
 To get a ranking of types of events with most harmful effects on population health we will consider
 only three columns (EVTYPE, INJURIES, FATALITIES). We will apply the following steps on the data:
 
@@ -45,7 +88,7 @@ only three columns (EVTYPE, INJURIES, FATALITIES). We will apply the following s
 - Take the 5 most harmful events.
 - Merge all 3 information columns to create 2 (DMGTYPE & QTY). This will help us to plot it easily.
 
-```{r health, cache=TRUE}
+```{r health, cache=TRUE, message=FALSE}
 most_harmful_events <- data %>%
                             group_by(EVTYPE) %>%
                             summarise(INJURIES = sum(INJURIES), FATALITIES = sum(FATALITIES)) %>%
@@ -70,7 +113,7 @@ we apply the following steps:
 - Take the top 5 events with most economics consequences.
 - Merge all 3 information columns to create 2 (DMGTYPE & AMOUNT). This will help us to plot it easily.
 
-```{r economics, cache=TRUE}
+```{r economics, cache=TRUE, message=FALSE}
 
 most_costly_events <- data %>%
             select(EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
@@ -97,12 +140,7 @@ most_costly_events <- data %>%
 
 ## Results
 
-From Figure 1, we have the following insights:
-
-- The most harmfill events are **tornados**.
-- In descending order of harmfulness, excessive heat, TSTM winds, floods and lightning follows.
-- Tornados are significantly more harmful than others events.
-- Number of injured people is greater than fatalities.
+Plotting our results will help us to get insight from the data. For the most harmful to population health events we have:
 
 ```{r}
 color_pallete <- brewer.pal(3, "Dark2")
@@ -119,11 +157,14 @@ ggplot(most_harmful_events_without_total, aes(x=reorder(EVTYPE, -QTY), y=QTY, fi
     labs(title = "Top 5 most harmful to population health event types", caption = "Figure 1")
 ```
 
-From Figure 2, we have the following insights:
+From Figure 1, we have the following insights:
 
-- The events with the greatest economics consequences are **floods**.
-- In descending order of consequences, hurricanes/typhoons, tornados, storm surges and hails follows.
-- Floods generates almost twice economics loses than hurricanes/typhoons.
+- The most harmful events are **tornados**.
+- In descending order of harmfulness, high winds, high temperatures, floods and blizzards follows.
+- Tornados are significantly more harmful than others events.
+- Number of injured people is greater than fatalities.
+
+The same reasoning can be applied for the events with the greatest economics consequences:
 
 ```{r}
 legend_labels <- c("Crops", "Properties", "Total")
@@ -137,6 +178,12 @@ ggplot(most_costly_events_without_total, aes(x=reorder(EVTYPE, -AMOUNT), y=AMOUN
     xlab("Event") + ylab("Amount in billions") +
     labs(title = "Top 5 event types with the greatest economic consequences", caption = "Figure 2")
 ```
+
+From Figure 2, we have the following insights:
+
+- The events with the greatest economics consequences are **floods**.
+- In descending order of consequences, hurricanes/typhoons, tornados, high tides and high winds follows.
+- Floods generates almost twice economics loses than hurricanes/typhoons.
 
 ## Appendix A
 ### Why to discard observations with values different from "b", "m" and "k"
@@ -157,7 +204,7 @@ For PROPDMGEXP:
 - There are 465934 missing values.
 - Corresponding PROPDMG value is 0 for 465858 observations and less than 75 for 76 observations (0.0084%).
 - In the documentation, no definition for the 'h' value was provided (only 'k', 'm' and 'b').
-- There are 7 'h' and 'H' values with PROPDMG less than 5.
+- There are 7 'h' values with PROPDMG less than 5. Compared to quantities around billions, this sum can be discarded.
 - 314 observations (0.035%) have numeric or special characters as values.
 
 For CROPDMGEXP:
@@ -167,3 +214,4 @@ For CROPDMGEXP:
 - 36 observations (0.004%) have numeric or special characters as values.
 
 **Conclusion**: To avoid noise due to unknown data, we remove from the total calculations numeric values with EXP different from 'b', 'm' and 'k'.
+
