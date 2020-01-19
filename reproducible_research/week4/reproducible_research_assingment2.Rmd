@@ -1,0 +1,169 @@
+---
+title: "Harmfulness for population health and economics consequences of natural disaster events"
+author: "Ricardo Leon"
+date: "January 17, 2020"
+output: html_document
+---
+
+## Synopsis
+
+Every year natural disasters produce a wide variaty of loses. Two of them are the subject to study in this report, injuries and fatalities and properties and crops damages. Using R libraries to process data (dplyr) and plot results (ggplot2) will help us to find out the most harmful event and the one with the greatest economics consequences. At the end, we get that tornados causes the most injuries and fatalities of all events and floods causes the greatest economics consequences.
+
+## Data Processing
+
+The first step is to load the required libraries.
+
+- dplyr for data proccessing.
+- ggplot2 and RColorBrewer for plotting results.
+
+```{r results='hide'}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+Given the download url, we get the data from the cloud, then unzip it and finally load it into R.
+
+```{r load, cache=TRUE}
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+file_name <- "repdata_data_StormData.csv.bz2"
+
+if (!file.exists(file_name)) {
+    download.file(url, destfile = "repdata_data_StormData.csv.bz2")
+}
+
+data <- read.csv("repdata_data_StormData.csv.bz2", header = TRUE, sep = ",", stringsAsFactors = FALSE)
+```
+
+To get a ranking of types of events with most harmful effects on population health we will consider
+only three columns (EVTYPE, INJURIES, FATALITIES). We will apply the following steps on the data:
+
+- Group by event type.
+- Summarise the total number for injuries, fatalities and both of them, all by event type.
+- Arrange data in descending order by total number of affected people.
+- Take the 5 most harmful events.
+- Merge all 3 information columns to create 2 (DMGTYPE & QTY). This will help us to plot it easily.
+
+```{r health, cache=TRUE}
+most_harmful_events <- data %>%
+                            group_by(EVTYPE) %>%
+                            summarise(INJURIES = sum(INJURIES), FATALITIES = sum(FATALITIES)) %>%
+                            mutate(TOTAL = INJURIES + FATALITIES) %>%
+                            arrange(desc(TOTAL)) %>%
+                            top_n(5) %>%
+                            gather(key=DMGTYPE, value=QTY, -EVTYPE)
+```
+
+In order to get the data required to measure the event with the greatest economics consequences,
+we apply the following steps:
+
+- Select columns EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG and CROPDMGEXP.
+- To work with values in billions, we substitute in columns PROPDMGEXP and CROPDMGEXP the letters 'k', 'm' and 'b' with the corresponding numerical factor values. Assign zero otherwise (check Appendix A for explanations).
+- Convert recent transformed columns into numeric.
+- Create 2 new columns TOTAL_PROP & TOTAL_CROP to contain amounts for PROPDMG and CROPDMG in billions.
+- Keep EVTYPE, TOTAL_PROP and TOTAL_CROP columns.
+- Group data by event type.
+- Get totals by event type.
+- Create TOTAL column to summarise amount types
+- Arrange in descending order of total costs.
+- Take the top 5 events with most economics consequences.
+- Merge all 3 information columns to create 2 (DMGTYPE & AMOUNT). This will help us to plot it easily.
+
+```{r economics, cache=TRUE}
+
+most_costly_events <- data %>%
+            select(EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
+            mutate(PROPDMGEXP = replace(PROPDMGEXP, !(tolower(PROPDMGEXP) %in% c("b", "m", "k")), "0"),
+                   PROPDMGEXP = replace(PROPDMGEXP, tolower(PROPDMGEXP) == "k", "0.000001"),
+                   PROPDMGEXP = replace(PROPDMGEXP, tolower(PROPDMGEXP) == "m", "0.001"),
+                   PROPDMGEXP = replace(PROPDMGEXP, tolower(PROPDMGEXP) == "b", "1"),
+                   CROPDMGEXP = replace(CROPDMGEXP, !(tolower(CROPDMGEXP) %in% c("b", "m", "k")), "0"),
+                   CROPDMGEXP = replace(CROPDMGEXP, tolower(CROPDMGEXP) == "k", "0.000001"),
+                   CROPDMGEXP = replace(CROPDMGEXP, tolower(CROPDMGEXP) == "m", "0.001"),
+                   CROPDMGEXP = replace(CROPDMGEXP, tolower(CROPDMGEXP) == "b", "1"),
+                   PROPDMGEXP = as.numeric(PROPDMGEXP),
+                   CROPDMGEXP = as.numeric(CROPDMGEXP),
+                   TOTAL_PROP = PROPDMG * PROPDMGEXP,
+                   TOTAL_CROP = CROPDMG * CROPDMGEXP) %>%
+            select(EVTYPE, TOTAL_PROP, TOTAL_CROP) %>%
+            group_by(EVTYPE) %>%
+            summarise(PROP = sum(TOTAL_PROP), CROP = sum(TOTAL_CROP)) %>%
+            mutate(TOTAL = PROP + CROP) %>%
+            arrange(desc(TOTAL)) %>%
+            top_n(5) %>%
+            gather(key=DMGTYPE, value=AMOUNT, -EVTYPE)
+```
+
+## Results
+
+From Figure 1, we have the following insights:
+
+- The most harmfill events are **tornados**.
+- In descending order of harmfulness, excessive heat, TSTM winds, floods and lightning follows.
+- Tornados are significantly more harmful than others events.
+- Number of injured people is greater than fatalities.
+
+```{r}
+color_pallete <- brewer.pal(3, "Dark2")
+line_color <- color_pallete[3]
+legend_labels <- c("Fatalities", "Injuries", "Total")
+most_harmful_events_without_total <- most_harmful_events %>% filter(DMGTYPE != "TOTAL")
+most_harmful_events_totals <- most_harmful_events %>% filter(DMGTYPE == "TOTAL")
+
+ggplot(most_harmful_events_without_total, aes(x=reorder(EVTYPE, -QTY), y=QTY, fill=factor(DMGTYPE))) +
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(name="Damage type", values=color_pallete, labels=legend_labels) +
+    geom_line(data = most_harmful_events_totals, aes(x=EVTYPE, y=QTY, group=1), colour=line_color) +
+    xlab("Event") + ylab("Quantity") +
+    labs(title = "Top 5 most harmful to population health event types", caption = "Figure 1")
+```
+
+From Figure 2, we have the following insights:
+
+- The events with the greatest economics consequences are **floods**.
+- In descending order of consequences, hurricanes/typhoons, tornados, storm surges and hails follows.
+- Floods generates almost twice economics loses than hurricanes/typhoons.
+
+```{r}
+legend_labels <- c("Crops", "Properties", "Total")
+most_costly_events_without_total <- most_costly_events %>% filter(DMGTYPE != "TOTAL")
+most_costly_events_totals <- most_costly_events %>% filter(DMGTYPE == "TOTAL")
+
+ggplot(most_costly_events_without_total, aes(x=reorder(EVTYPE, -AMOUNT), y=AMOUNT, fill=factor(DMGTYPE))) +
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(name="Damage type", values=color_pallete, labels=legend_labels) +
+    geom_line(data = most_costly_events_totals, aes(x=EVTYPE, y=AMOUNT, group=1), colour=line_color) +
+    xlab("Event") + ylab("Amount in billions") +
+    labs(title = "Top 5 event types with the greatest economic consequences", caption = "Figure 2")
+```
+
+## Appendix A
+### Why to discard observations with values different from "b", "m" and "k"
+
+Exploring the data, we can figure out some important insights.
+
+```{r cache=TRUE}
+bmk <- data %>% select(EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+table(bmk$PROPDMGEXP)
+table(bmk$PROPDMG[bmk$PROPDMGEXP == ""])
+table(bmk$PROPDMG[tolower(bmk$PROPDMGEXP) == "h"])
+table(bmk$CROPDMGEXP)
+table(bmk$CROPDMG[bmk$CROPDMGEXP == ""])
+```
+
+For PROPDMGEXP:
+
+- There are 465934 missing values.
+- Corresponding PROPDMG value is 0 for 465858 observations and less than 75 for 76 observations (0.0084%).
+- In the documentation, no definition for the 'h' value was provided (only 'k', 'm' and 'b').
+- There are 7 'h' and 'H' values with PROPDMG less than 5.
+- 314 observations (0.035%) have numeric or special characters as values.
+
+For CROPDMGEXP:
+
+- For CROPDMGEXP there are 618413 missing values.
+- Corresponding CROPDMG value is 0 for 618410 observations and less than 4 for 3 observations (0.0003%).
+- 36 observations (0.004%) have numeric or special characters as values.
+
+**Conclusion**: To avoid noise due to unknown data, we remove from the total calculations numeric values with EXP different from 'b', 'm' and 'k'.
