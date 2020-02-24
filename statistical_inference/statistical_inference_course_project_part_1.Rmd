@@ -5,24 +5,25 @@ date: "February 23, 2020"
 output:
     pdf_document:
         fig_width: 4
-        fig_height: 2.2
+        fig_height: 2
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(ggplot2)
-set.seed(42)
 ```
 
 ## Overview
 
-Central Limit Theorem is a very useful tool for statistical inference. Through exponential distribution sampling, it is going to be exposed empirical proofs of it effectiveness. 1000 samples with 40 observations each will be used to this purpose.
+Central Limit Theorem is a very useful tool for statistical inference. Through exponential distribution sampling, it is going to be exposed empirical proofs of it effectiveness. 1000 samples with 40 observations each will be used to this purpose. We conclude that our simulations confirm Central Limit Theorem statements.
 
 ## Simulations
 
 The first step is to set initial values and calculate theorical mean and standard deviation.
 
 ```{r}
+library(ggplot2)
+set.seed(42)
+
 lambda = 0.2
 distribution_mean = 1 / lambda
 distribution_variance = 1 / (lambda * lambda)
