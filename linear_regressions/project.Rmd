@@ -1,0 +1,140 @@
+---
+title: "Influence of car transmission type on mpg"
+author: "Ricardo Leon"
+date: "4/26/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+Ecology and efficiency are important aspects in this times when talking about car manufacturing. With Motor Trend available data, we will measure the influence of car transmission types on mpg. After the analysis, it is concluded that for cars with weight greater than 3400lb automatic transmission is the best option for mpg, otherwise (less than 3400lb) manual transmission is the right choice.
+
+## Setup for analysis
+
+As the first step, dplyr and ggplot2 libraries and mtcars dataset will be loaded.
+
+```{r imports, message=FALSE}
+library(dplyr)
+library(ggplot2)
+data(mtcars)
+```
+
+## Exploratory Analysis
+
+Checking the data, it can be noticed that cyl, vs, am, gear and carb are in fact factor variables (see Appendix A). So lets transform that to corresponding type.
+
+```{r}
+tidy.data <- mtcars %>% mutate(cyl = as.factor(cyl),
+                               vs = as.factor(vs), 
+                               am = as.factor(am),
+                               gear = as.factor(gear),
+                               carb = as.factor(carb))
+```
+
+The variable we are interested in is am (tramission type). In Appendix B, it is shown a plot with the mpg values for each transmission type.
+
+## Model Selection
+
+The first model will fit mpg ~ am. Consecutively, it will add one predictor to check if the model can fit the data with the use of the anova function (numeric results shown in Appendix C).
+
+```{r results='hide'}
+fit1 <- lm(mpg ~ am, data = tidy.data)
+fit2 <- update(fit1, mpg ~ am + wt)
+fit3 <- update(fit1, mpg ~ am + wt + qsec)
+fit4 <- update(fit1, mpg ~ am + wt + qsec + cyl)
+anova(fit1, fit2, fit3, fit4)
+```
+
+We have that wt and qsec worth to be included in the model considering a significance value of alpha = 0.05. As am is a factor value, we can test if including mixed predictors add value (am * wt & am * qsec).
+
+```{r results='hide'}
+fit4 <- update(fit1, mpg ~ am + wt + qsec + am * wt)
+fit5 <- update(fit1, mpg ~ am + wt + qsec + am * wt + am * qsec)
+anova(fit3, fit4, fit5)
+```
+
+am * wt worths to be included. looking at the p values for each coefficient, each of them is significant expect for the intercept (Appendix C). Removing the independent term, we get for am value 0 a coefficient to make easier the interpretation.
+
+```{r}
+fit <- lm(mpg ~ am + wt + qsec + am * wt - 1, data = tidy.data)
+modelCoef <- round(summary(fit)$coef, 3)
+modelCoef
+```
+
+## Residual analysis
+
+Checking the "Residual vs Fitted" and "Residuals vs Leverage" plots (Appendix D) obtained from the model, no patterns can be detected that contradict the model.
+
+## Inferences from model
+
+From model coefficients, we have that automatic and manual cars contribute with `r modelCoef[1,1]` and `r modelCoef[2,1]` mpg respectively. So manual cars coefficient have more impact by itself for mpg. However we can see a greater negative impact in weight contribution to mpg when car is manual.
+
+```{r}
+wt.interval.auto <- modelCoef[3,1] + c(-1,1) * qt(.975, df = fit$df) * modelCoef[3,2]
+
+wt.manual.coef <- modelCoef[3,1] + modelCoef[5,1]
+wt.manual.std <- abs(modelCoef[3,2]) + abs(modelCoef[5,2])
+wt.interval.manual <- wt.manual.coef + c(-1,1) * qt(.975, df = fit$df) * wt.manual.std
+```
+
+With 95% confidence, we have a decrement for mpg each 1000lb, as follows:
+
+For automatic transmission: (`r wt.interval.auto[1]`, `r wt.interval.auto[2]`).
+
+For manual transmission: (`r wt.interval.manual[1]`, `r wt.interval.manual[2]`).
+
+Manual cars adds `r modelCoef[2,1] - modelCoef[1,1]` mpg over automatic ones but this gain is cancelled for cars over `r round(1000 * (modelCoef[2,1] - modelCoef[1,1]) / abs(modelCoef[5,1]), 0)` lbs.
+
+\newpage
+
+# Appendix A. Data structure.
+
+```{r}
+str(mtcars)
+```
+
+# Appendix B. Relationship between mpg and transmission type
+
+```{r}
+ggplot(tidy.data, aes(y = mpg, x = am)) +
+  geom_point() +
+  labs(title="Relationship between mpg and transmission type",
+       x ="Transmission type", y = "mpg")
+```
+
+\newpage
+
+# Appendix C. Results of model comparison.
+
+If we add any predictor to fit3, anova return a F score greater than our significant value 0.05.
+
+```{r}
+fit1 <- lm(mpg ~ am, data = tidy.data)
+fit2 <- update(fit1, mpg ~ am + wt)
+fit3 <- update(fit1, mpg ~ am + wt + qsec)
+fit4 <- update(fit1, mpg ~ am + wt + qsec + cyl)
+anova(fit1, fit2, fit3, fit4)
+```
+
+```{r}
+fit4 <- update(fit1, mpg ~ am + wt + qsec + am * wt)
+fit5 <- update(fit1, mpg ~ am + wt + qsec + am * wt + am *qsec)
+anova(fit3, fit4, fit5)
+```
+
+```{r}
+summary(fit4)$coef
+```
+
+\newpage
+
+# Appendix D. Residual plots.
+
+```{r results='hide'}
+par(mfrow=c(2,2))
+plot(fit)
+```
