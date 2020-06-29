@@ -371,7 +371,7 @@ summary {
 
 <div id="summary" class="section level2">
 <h2>Summary</h2>
-<p>To predict Human Activity, there were applied several EDA techniques to get insights about the problem. 100 of the predictors had more than 95% missing values and physics knowledge was mandatory to create new features (vector modules). After high correlated variables were excluded, 15 predictor were selected to build the machine learning model. A benchmark was created providing as a start point (naive solution) with only 4 predictors and it had 55% of accuracy. Later Random Forest and Boosting models were applied to all 15 predictors resulting Random Forest as the best model with 80% of accuracy. For the test set, predicted activities were C A C A A E D C A A D C B A E B A B A B.</p>
+<p>To predict Human Activity, there were applied several EDA techniques to get insights about the problem. 100 of the predictors had more than 95% missing values and physics knowledge was mandatory to create new features (vector modules). After high correlated variables were excluded, 15 predictor were selected to build the machine learning model. A benchmark was created providing as a start point (naive solution) with only 4 predictors and it had 63% of accuracy. Later Random Forest and Boosting models were applied to all 15 predictors resulting Random Forest as the best model with 94% of accuracy. For the test set, predicted activities were B A C A A E D B A A D C B A E E A B B B.</p>
 </div>
 <div id="set-environment" class="section level2">
 <h2>Set environment</h2>
@@ -549,7 +549,7 @@ customPreProcess &lt;- function(data) {
 <pre class="r"><code>generateSampling &lt;- function(nsamples) {
   sample(nrow(training), nsamples)
 }
-randomSample &lt;- generateSampling(1000)</code></pre>
+randomSample &lt;- generateSampling(8000)</code></pre>
 </div>
 <div id="benchmark" class="section level2">
 <h2>Benchmark</h2>
@@ -560,19 +560,20 @@ randomSample &lt;- generateSampling(1000)</code></pre>
 </ul>
 <p>Using a 5-fold CV and accuracy as the metric, we train the model to get the expected out of sample error:</p>
 <pre class="r"><code>accel_cols &lt;- c(&#39;total_accel_arm&#39;, &#39;total_accel_forearm&#39;, &#39;total_accel_belt&#39;, &#39;total_accel_dumbbell&#39;)
-trainingBenchmark &lt;- processedTraining %&gt;% select(all_of(accel_cols))
+trainingBenchmark &lt;- training %&gt;% select(all_of(accel_cols))
 trainingBenchmark &lt;- cbind(trainingBenchmark, data.frame(classe=training$classe))
+trainingBenchmark &lt;- trainingBenchmark[randomSample,]
 
 train_control &lt;- trainControl(method=&quot;cv&quot;, number=5)
 
 benchModel &lt;- train(classe ~ .,
-                    data=trainingBenchmark[randomSample,],
+                    data=trainingBenchmark,
                     method=&#39;rf&#39;,
                     trControl = train_control,
                     prox=TRUE)
 benchAccuracy &lt;- mean(benchModel$results$Accuracy)
 benchAccuracySD &lt;- mean(benchModel$results$AccuracySD)</code></pre>
-<p><strong>Benchmark results:</strong> The expected out of sample error for the benchmark is 0.5526 +/- 0.0254.</p>
+<p><strong>Benchmark results:</strong> The expected out of sample error for the benchmark is 0.6345 +/- 0.0101.</p>
 </div>
 <div id="model-prediction" class="section level2">
 <h2>Model prediction</h2>
@@ -594,7 +595,7 @@ processedTraining &lt;- processedTraining[randomSample,]</code></pre>
                     prox=TRUE)
 rfAccuracy &lt;- mean(rfModelFit$results$Accuracy)
 rfAccuracySD &lt;- mean(rfModelFit$results$AccuracySD)</code></pre>
-<p><strong>Random Forest results:</strong> The expected out of sample error is 0.791 +/- 0.0358.</p>
+<p><strong>Random Forest results:</strong> The expected out of sample error is 0.94 +/- 0.0114.</p>
 <pre class="r"><code>boostModelFit &lt;- train(classe ~ .,
                        data=processedTraining,
                        method=&#39;gbm&#39;,
@@ -603,22 +604,22 @@ rfAccuracySD &lt;- mean(rfModelFit$results$AccuracySD)</code></pre>
                        verbose=FALSE)
 boostAccuracy &lt;- mean(boostModelFit$results$Accuracy)
 boostAccuracySD &lt;- mean(boostModelFit$results$AccuracySD)</code></pre>
-<p><strong>Random Forest results:</strong> The expected out of sample error is 0.6731 +/- 0.0231.</p>
+<p><strong>Random Forest results:</strong> The expected out of sample error is 0.7514 +/- 0.0089.</p>
 </div>
 <div id="predicting-on-the-testing-set" class="section level2">
 <h2>Predicting on the testing set</h2>
 <p>Using the Random Forest (best model), it will predict testing classes:</p>
 <pre class="r"><code>processedTesting &lt;- customPreProcess(testing)
 predict(rfModelFit, processedTesting)</code></pre>
-<pre><code>##  [1] C A C A A E D C A A D C B A E B A B A B
+<pre><code>##  [1] B A C A A E D B A A D C B A E E A B B B
 ## Levels: A B C D E</code></pre>
 </div>
 <div id="conclusions" class="section level2">
 <h2>Conclusions</h2>
 <ul>
-<li>Both models performed better than the benchmark performs.</li>
+<li>Both models performed better than the benchmark.</li>
 <li>For this problem, Random Forest was the best model to provide a solution.</li>
-<li>Predictions for tests where (in the same order): C A C A A E D C A A D C B A E B A B A B.</li>
+<li>Predictions for tests where (in the same order): B A C A A E D B A A D C B A E E A B B B.</li>
 </ul>
 </div>
 

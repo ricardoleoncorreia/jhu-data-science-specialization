@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Summary
 
-To predict Human Activity, there were applied several EDA techniques to get insights about the problem. 100 of the predictors had more than 95% missing values and physics knowledge was mandatory to create new features (vector modules). After high correlated variables were excluded, 15 predictor were selected to build the machine learning model. A benchmark was created providing as a start point (naive solution) with only 4 predictors and it had 55% of accuracy. Later Random Forest and Boosting models were applied to all 15 predictors resulting Random Forest as the best model with 80% of accuracy. For the test set, predicted activities were C A C A A E D C A A D C B A E B A B A B.
+To predict Human Activity, there were applied several EDA techniques to get insights about the problem. 100 of the predictors had more than 95% missing values and physics knowledge was mandatory to create new features (vector modules). After high correlated variables were excluded, 15 predictor were selected to build the machine learning model. A benchmark was created providing as a start point (naive solution) with only 4 predictors and it had 63% of accuracy. Later Random Forest and Boosting models were applied to all 15 predictors resulting Random Forest as the best model with 94% of accuracy. For the test set, predicted activities were B A C A A E D B A A D C B A E E A B B B.
 
 ## Set environment
 
@@ -192,7 +192,7 @@ Due to hardware limitation, the training phase, can't be executed with all the d
 generateSampling <- function(nsamples) {
   sample(nrow(training), nsamples)
 }
-randomSample <- generateSampling(1000)
+randomSample <- generateSampling(8000)
 ```
 
 ## Benchmark
@@ -204,15 +204,16 @@ A benchmark will be useful to compare all model implementations. As a simple mod
 
 Using a 5-fold CV and accuracy as the metric, we train the model to get the expected out of sample error:
 
-```{r}
+```{r cache=TRUE}
 accel_cols <- c('total_accel_arm', 'total_accel_forearm', 'total_accel_belt', 'total_accel_dumbbell')
-trainingBenchmark <- processedTraining %>% select(all_of(accel_cols))
+trainingBenchmark <- training %>% select(all_of(accel_cols))
 trainingBenchmark <- cbind(trainingBenchmark, data.frame(classe=training$classe))
+trainingBenchmark <- trainingBenchmark[randomSample,]
 
 train_control <- trainControl(method="cv", number=5)
 
 benchModel <- train(classe ~ .,
-                    data=trainingBenchmark[randomSample,],
+                    data=trainingBenchmark,
                     method='rf',
                     trControl = train_control,
                     prox=TRUE)
@@ -239,7 +240,7 @@ processedTraining <- processedTraining[randomSample,]
 
 Next, Random Forest model will be train:
 
-```{r}
+```{r cache=TRUE}
 rfModelFit <- train(classe ~ .,
                     data=processedTraining,
                     method='rf',
@@ -252,7 +253,7 @@ rfAccuracySD <- mean(rfModelFit$results$AccuracySD)
 
 **Random Forest results:** The expected out of sample error is `r round(rfAccuracy, 4)`  +/- `r round(rfAccuracySD, 4)`.
 
-```{r}
+```{r cache=TRUE}
 boostModelFit <- train(classe ~ .,
                        data=processedTraining,
                        method='gbm',
@@ -276,6 +277,6 @@ predict(rfModelFit, processedTesting)
 
 ## Conclusions
 
-* Both models performed better than the benchmark performs.
+* Both models performed better than the benchmark.
 * For this problem, Random Forest was the best model to provide a solution.
-* Predictions for tests where (in the same order): C A C A A E D C A A D C B A E B A B A B.
+* Predictions for tests where (in the same order): B A C A A E D B A A D C B A E E A B B B.
