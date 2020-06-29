@@ -1,0 +1,281 @@
+---
+title: "Human Activity Recognition Project"
+author: "Ricardo Leon"
+date: "6/27/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+To predict Human Activity, there were applied several EDA techniques to get insights about the problem. 100 of the predictors had more than 95% missing values and physics knowledge was mandatory to create new features (vector modules). After high correlated variables were excluded, 15 predictor were selected to build the machine learning model. A benchmark was created providing as a start point (naive solution) with only 4 predictors and it had 55% of accuracy. Later Random Forest and Boosting models were applied to all 15 predictors resulting Random Forest as the best model with 80% of accuracy. For the test set, predicted activities were C A C A A E D C A A D C B A E B A B A B.
+
+## Set environment
+
+For this report, there will be required the following libraries:
+
+* **dplyr** for data processing.
+* **ggplot2** for plotting.
+* **caret** for machine learning.
+* **reshape2** for correlation heatmap.
+
+```{r message=FALSE}
+library(dplyr); library(ggplot2); library(caret); library(reshape2)
+```
+
+For reproducibility, seed will be set to 42.
+
+```{r}
+set.seed(42)
+```
+
+Lets load the training and testing data:
+
+```{r}
+training <- read.csv('pml-training.csv')
+testing <- read.csv('pml-testing.csv')
+```
+
+## Exploratory Data Analysis
+
+First, all columns with more than 95% of missing data will be removed. Otherwise, applying imputing techniques may lead to bias the data set.
+
+```{r}
+missingCount <- sapply(training, function(x) sum(is.na(x) | x == ''))
+columnsToRemove <- missingCount > 0.95 * nrow(training)
+numberOfColumnsToRemove <- sum(columnsToRemove)
+meaningfulColumns <- colnames(training)[!columnsToRemove]
+```
+
+There are `r numberOfColumnsToRemove` columns NOT satisfying the minimum requirements. From `missingCount` variable, it can be verified that there are no other columns with missing values.
+
+The columns `X`, `user_name`, `raw_timestamp_part_1`, `raw_timestamp_part_2`, `cvtd_timestamp`, `new_window` and `num_window` show data related to the user and measurement unrelated to the prediction of the activity so they will be removed. `classe` will be excluded as well to make easier the EDA.
+
+```{r}
+columnsToKeep <- meaningfulColumns[!grepl('X|user|time|window|classe', meaningfulColumns)]
+processedTraining <- training[columnsToKeep]
+str(processedTraining)
+```
+
+Now, check if there is a near zero variable:
+
+```{r}
+nzv <-nearZeroVar(processedTraining, saveMetrics = TRUE)
+nearZeroPredictors <- sum(nzv$nzv)
+```
+
+`r nearZeroPredictors` near zero variables were found so no column will be discarded for this reason.
+
+In physics, the module of distance, velocity and acceleration contains the information for their decomposition of their coordinates so new features will be created as follows (later it will be found that total_acceleration is highly co-linear with these new properties so they will be discarded. Maybe they were published in different units):
+
+* For acceleration:
+
+```{r}
+onlyAccelColumns <- columnsToKeep[grepl('accel.+(_x$|_y$|_z$)', columnsToKeep)]
+acceleration <- processedTraining[onlyAccelColumns] %>%
+                  mutate(accel_belt = sqrt(accel_belt_x^2 + accel_belt_y^2 + accel_belt_z^2),
+                    accel_arm = sqrt(accel_arm_x^2 + accel_arm_y^2 + accel_arm_z^2),
+                    accel_dumbbell = sqrt(accel_dumbbell_x^2 + accel_dumbbell_y^2 + accel_dumbbell_z^2),
+                    accel_forearm = sqrt(accel_forearm_x^2 + accel_forearm_y^2 + accel_forearm_z^2))
+acceleration <- acceleration[c('accel_belt', 'accel_arm', 'accel_dumbbell', 'accel_forearm')]
+```
+
+* For gyros:
+
+```{r}
+onlyGyrosColumns <- columnsToKeep[grepl('gyros.+(_x$|_y$|_z$)', columnsToKeep)]
+gyros <- processedTraining[onlyGyrosColumns] %>%
+                  mutate(gyros_belt = sqrt(gyros_belt_x^2 + gyros_belt_y^2 + gyros_belt_z^2),
+                    gyros_arm = sqrt(gyros_arm_x^2 + gyros_arm_y^2 + gyros_arm_z^2),
+                    gyros_dumbbell = sqrt(gyros_dumbbell_x^2 + gyros_dumbbell_y^2 + gyros_dumbbell_z^2),
+                    gyros_forearm = sqrt(gyros_forearm_x^2 + gyros_forearm_y^2 + gyros_forearm_z^2))
+gyros <- gyros[c('gyros_belt', 'gyros_arm', 'gyros_dumbbell', 'gyros_forearm')]
+```
+
+* For magnet:
+
+```{r}
+onlyMagnetColumns <- columnsToKeep[grepl('magnet.+(_x$|_y$|_z$)', columnsToKeep)]
+magnet <- processedTraining[onlyMagnetColumns] %>%
+                  mutate(magnet_belt = sqrt(magnet_belt_x^2 + magnet_belt_y^2 + magnet_belt_z^2),
+                    magnet_arm = sqrt(magnet_arm_x^2 + magnet_arm_y^2 + magnet_arm_z^2),
+                    magnet_dumbbell = sqrt(magnet_dumbbell_x^2 + magnet_dumbbell_y^2 + magnet_dumbbell_z^2),
+                    magnet_forearm = sqrt(magnet_forearm_x^2 + magnet_forearm_y^2 + magnet_forearm_z^2))
+magnet <- magnet[c('magnet_belt', 'magnet_arm', 'magnet_dumbbell', 'magnet_forearm')]
+```
+
+Next, append modules and remove respective coordinates. This will reduce significantly the number of features.
+
+```{r}
+processedTraining <- cbind(processedTraining, acceleration, gyros, magnet) %>%
+                        select(-c(all_of(onlyAccelColumns), all_of(onlyMagnetColumns), all_of(onlyGyrosColumns)))
+```
+
+At this stage there are `r dim(processedTraining)[2]` possible predictors. Lets plot the correlation heatmap to check for correlated variables.
+
+```{r}
+cormat <- cor(processedTraining)
+melted_cormat <- melt(cormat)
+ggplot(data = melted_cormat, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile() +
+  ggtitle('Predictors correlation matrix') +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+```
+
+It can be noticed that there are a lot of variables that are highly correlated (spots too dark or too light). Lets find those relations. The following function will help to get the relationship in a very easy way:
+
+```{r}
+findHighCorrelatedPredictor <- function(data, threshold, excludeColumns=c()) {
+  # Filter dataset
+  trainingPredictors <- data %>% select(-all_of(excludeColumns))
+  # Calculate correlation matrix
+  correlationMatrix <- cor(trainingPredictors)
+  # Prepare variables
+  predictorsNames <- colnames(trainingPredictors)
+  allCorrelations <- c()
+  
+  for (predictorName in predictorsNames) {
+    # Check value over threshold
+    predictorsOverThreshold <- abs(cor(correlationMatrix)[, predictorName]) > threshold
+    # Get correlated predictors
+    correlatedPredictors <- predictorsNames[predictorsOverThreshold]
+    # Remove relationship with itself
+    correlatedPredictors <- correlatedPredictors[correlatedPredictors != predictorName]  
+    # If there are coincidences, add relations to summary character vector
+    if (!identical(correlatedPredictors, character(0))) {
+      highRelations <- paste0(predictorName, ' -> ', correlatedPredictors)
+      allCorrelations <- c(allCorrelations, highRelations) 
+    }
+  }
+  allCorrelations
+}
+```
+
+The first step, is excluding all features that are very high correlated (over 0.9). Using the function above and iteratively selecting columns to remove, the `exclude` variable is build:
+
+```{r results="hide"}
+exclude <- c('roll_belt', 'accel_belt', 'accel_forearm', 'accel_dumbbell', 'accel_arm', 'gyros_dumbbell')
+findHighCorrelatedPredictor(data=processedTraining, threshold=0.9, excludeColumns=exclude)
+processedTraining <- processedTraining %>% select(-all_of(exclude))
+```
+
+The second step is repeat the previous but with threshold 0.7 (highly correlated):
+
+```{r results="hide"}
+exclude <- c('magnet_dumbbell', 'magnet_belt', 'gyros_belt', 'yaw_dumbbell', 'pitch_forearm', 'yaw_belt', 'pitch_dumbbell')
+findHighCorrelatedPredictor(data=processedTraining, threshold=0.7, excludeColumns=exclude)
+processedTraining <- processedTraining %>% select(-all_of(exclude))
+```
+
+The last step is to save all selected columns, and create a helper function to apply these changes to the datasets in the following sections:
+
+```{r}
+columnsToKeep <- colnames(processedTraining)
+customPreProcess <- function(data) {
+  data %>%
+    mutate(gyros_arm = sqrt(gyros_arm_x^2 + gyros_arm_y^2 + gyros_arm_z^2),
+           gyros_forearm = sqrt(gyros_forearm_x^2 + gyros_forearm_y^2 + gyros_forearm_z^2),
+           magnet_arm = sqrt(magnet_arm_x^2 + magnet_arm_y^2 + magnet_arm_z^2),
+           magnet_forearm = sqrt(magnet_forearm_x^2 + magnet_forearm_y^2 + magnet_forearm_z^2)) %>%
+    select(all_of(columnsToKeep))
+}
+```
+
+Due to hardware limitation, the training phase, can't be executed with all the data set, so a helper function to generate a random sub-sample will be useful.
+
+```{r}
+generateSampling <- function(nsamples) {
+  sample(nrow(training), nsamples)
+}
+randomSample <- generateSampling(1000)
+```
+
+## Benchmark
+
+A benchmark will be useful to compare all model implementations. As a simple model, it will be set under the following statements:
+
+* Suppose that only total acceleration explains the problem.
+* A random forest model will be implemented.
+
+Using a 5-fold CV and accuracy as the metric, we train the model to get the expected out of sample error:
+
+```{r}
+accel_cols <- c('total_accel_arm', 'total_accel_forearm', 'total_accel_belt', 'total_accel_dumbbell')
+trainingBenchmark <- processedTraining %>% select(all_of(accel_cols))
+trainingBenchmark <- cbind(trainingBenchmark, data.frame(classe=training$classe))
+
+train_control <- trainControl(method="cv", number=5)
+
+benchModel <- train(classe ~ .,
+                    data=trainingBenchmark[randomSample,],
+                    method='rf',
+                    trControl = train_control,
+                    prox=TRUE)
+benchAccuracy <- mean(benchModel$results$Accuracy)
+benchAccuracySD <- mean(benchModel$results$AccuracySD)
+```
+
+**Benchmark results:** The expected out of sample error for the benchmark is `r round(benchAccuracy, 4)`  +/- `r round(benchAccuracySD, 4)`.
+
+## Model prediction
+
+For real predictions, the following considerations will be taken:
+
+* Random Forest and Boosting `gbm` models are going to be used.
+* Common parameters for both models: 5-fold CV, center and scale preprocess.
+
+Below, it will be prepared the training dataset:
+
+```{r}
+processedTraining <- customPreProcess(training)
+processedTraining <- cbind(processedTraining, data.frame(classe=training$classe))
+processedTraining <- processedTraining[randomSample,]
+```
+
+Next, Random Forest model will be train:
+
+```{r}
+rfModelFit <- train(classe ~ .,
+                    data=processedTraining,
+                    method='rf',
+                    trControl = train_control,
+                    preProcess = c('center', 'scale'),
+                    prox=TRUE)
+rfAccuracy <- mean(rfModelFit$results$Accuracy)
+rfAccuracySD <- mean(rfModelFit$results$AccuracySD)
+```
+
+**Random Forest results:** The expected out of sample error is `r round(rfAccuracy, 4)`  +/- `r round(rfAccuracySD, 4)`.
+
+```{r}
+boostModelFit <- train(classe ~ .,
+                       data=processedTraining,
+                       method='gbm',
+                       trControl = train_control,
+                       preProcess = c('center', 'scale'),
+                       verbose=FALSE)
+boostAccuracy <- mean(boostModelFit$results$Accuracy)
+boostAccuracySD <- mean(boostModelFit$results$AccuracySD)
+```
+
+**Random Forest results:** The expected out of sample error is `r round(boostAccuracy, 4)`  +/- `r round(boostAccuracySD, 4)`.
+
+## Predicting on the testing set
+
+Using the Random Forest (best model), it will predict testing classes:
+
+```{r}
+processedTesting <- customPreProcess(testing)
+predict(rfModelFit, processedTesting)
+```
+
+## Conclusions
+
+* Both models performed better than the benchmark performs.
+* For this problem, Random Forest was the best model to provide a solution.
+* Predictions for tests where (in the same order): C A C A A E D C A A D C B A E B A B A B.
