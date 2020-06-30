@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Summary
 
-To predict Human Activity, there were applied several EDA techniques to get insights about the problem. 100 of the predictors had more than 95% missing values and physics knowledge was mandatory to create new features (vector modules). After high correlated variables were excluded, 15 predictor were selected to build the machine learning model. A benchmark was created providing as a start point (naive solution) with only 4 predictors and it had 63% of accuracy. Later Random Forest and Boosting models were applied to all 15 predictors resulting Random Forest as the best model with 94% of accuracy. For the test set, predicted activities were B A C A A E D B A A D C B A E E A B B B.
+To predict Human Activity, there were applied several EDA techniques to get insights about the problem. 100 of the predictors had more than 95% missing values and physics knowledge was mandatory to create new features (vector modules). After high correlated variables were excluded, 15 predictor were selected to build the machine learning model. A benchmark was created providing as a start point (naive solution) with only 4 predictors and it had 66% of accuracy. Later Random Forest and Boosting models were applied to all 15 predictors resulting Random Forest as the best model with 96% of accuracy. For the test set, predicted activities were B, A, C, A, A, E, D, B, A, A, B, C, B, A, E, E, A, B, A, B. Due to hardware limitations this results correspond to only 8.000 instances of the training set.
 
 ## Set environment
 
@@ -57,7 +57,6 @@ The columns `X`, `user_name`, `raw_timestamp_part_1`, `raw_timestamp_part_2`, `c
 ```{r}
 columnsToKeep <- meaningfulColumns[!grepl('X|user|time|window|classe', meaningfulColumns)]
 processedTraining <- training[columnsToKeep]
-str(processedTraining)
 ```
 
 Now, check if there is a near zero variable:
@@ -186,13 +185,35 @@ customPreProcess <- function(data) {
 }
 ```
 
-Due to hardware limitation, the training phase, can't be executed with all the data set, so a helper function to generate a random sub-sample will be useful.
+One helper function for calculating accuracy for predictions will be useful:
+
+```{r}
+calcAccuracy <- function(y_real, y_pred) {
+  mean(y_real == y_pred)
+}
+```
+
+## Special considerations for this project
+
+Due to hardware limitations, the training phase can't be executed with all the data set, so a helper function to generate a random 8000 instances sub-sample will be useful.
 
 ```{r}
 generateSampling <- function(nsamples) {
   sample(nrow(training), nsamples)
 }
+
 randomSample <- generateSampling(8000)
+trainSampled <- training[randomSample,]
+```
+
+## Splitting data for training validation
+
+20% of the data will be separated for validation purposes.
+
+```{r}
+inTrain <- createDataPartition(y=trainSampled$classe, p=0.8, list=FALSE)
+trainSet <- trainSampled[inTrain,]
+valSet <- trainSampled[-inTrain,]
 ```
 
 ## Benchmark
@@ -206,9 +227,8 @@ Using a 5-fold CV and accuracy as the metric, we train the model to get the expe
 
 ```{r cache=TRUE}
 accel_cols <- c('total_accel_arm', 'total_accel_forearm', 'total_accel_belt', 'total_accel_dumbbell')
-trainingBenchmark <- training %>% select(all_of(accel_cols))
-trainingBenchmark <- cbind(trainingBenchmark, data.frame(classe=training$classe))
-trainingBenchmark <- trainingBenchmark[randomSample,]
+trainingBenchmark <- trainSet %>% select(all_of(accel_cols))
+trainingBenchmark <- cbind(trainingBenchmark, data.frame(classe=trainSet$classe))
 
 train_control <- trainControl(method="cv", number=5)
 
@@ -218,10 +238,19 @@ benchModel <- train(classe ~ .,
                     trControl = train_control,
                     prox=TRUE)
 benchAccuracy <- mean(benchModel$results$Accuracy)
-benchAccuracySD <- mean(benchModel$results$AccuracySD)
 ```
 
-**Benchmark results:** The expected out of sample error for the benchmark is `r round(benchAccuracy, 4)`  +/- `r round(benchAccuracySD, 4)`.
+From validation set, it can be estimated the out-of-sample error:
+
+```{r}
+benchPred <- predict(benchModel, newdata = valSet)
+benchOOSAcc <- calcAccuracy(valSet$classe, benchPred)
+```
+
+**Benchmark accuracy:**
+
+* Training accuracy is `r round(benchAccuracy, 4)`.
+* The expected out of sample accuracy is `r round(benchOOSAcc, 4)`.
 
 ## Model prediction
 
@@ -233,9 +262,10 @@ For real predictions, the following considerations will be taken:
 Below, it will be prepared the training dataset:
 
 ```{r}
-processedTraining <- customPreProcess(training)
-processedTraining <- cbind(processedTraining, data.frame(classe=training$classe))
-processedTraining <- processedTraining[randomSample,]
+processedTraining <- customPreProcess(trainSet)
+processedTraining <- cbind(processedTraining, data.frame(classe=trainSet$classe))
+
+processedValidation <- customPreProcess(valSet)
 ```
 
 Next, Random Forest model will be train:
@@ -248,10 +278,21 @@ rfModelFit <- train(classe ~ .,
                     preProcess = c('center', 'scale'),
                     prox=TRUE)
 rfAccuracy <- mean(rfModelFit$results$Accuracy)
-rfAccuracySD <- mean(rfModelFit$results$AccuracySD)
 ```
 
-**Random Forest results:** The expected out of sample error is `r round(rfAccuracy, 4)`  +/- `r round(rfAccuracySD, 4)`.
+For validation set:
+
+```{r}
+rfPred <- predict(rfModelFit, newdata = processedValidation)
+rfOOSAcc <- calcAccuracy(valSet$classe, rfPred)
+```
+
+**Random Forest accuracy:**
+
+* Training accuracy is `r round(rfAccuracy, 4)`.
+* The expected out of sample accuracy is `r round(rfOOSAcc, 4)`.
+
+Now, same process with boosting model:
 
 ```{r cache=TRUE}
 boostModelFit <- train(classe ~ .,
@@ -261,10 +302,19 @@ boostModelFit <- train(classe ~ .,
                        preProcess = c('center', 'scale'),
                        verbose=FALSE)
 boostAccuracy <- mean(boostModelFit$results$Accuracy)
-boostAccuracySD <- mean(boostModelFit$results$AccuracySD)
 ```
 
-**Random Forest results:** The expected out of sample error is `r round(boostAccuracy, 4)`  +/- `r round(boostAccuracySD, 4)`.
+For validation set:
+
+```{r}
+boostPred <- predict(boostModelFit, newdata = processedValidation)
+boostOOSAcc <- calcAccuracy(valSet$classe, boostPred)
+```
+
+**Boosting accuracy:**
+
+* Training accuracy is `r round(boostAccuracy, 4)`.
+* The expected out of sample accuracy is `r round(boostOOSAcc, 4)`.
 
 ## Predicting on the testing set
 
@@ -272,11 +322,11 @@ Using the Random Forest (best model), it will predict testing classes:
 
 ```{r}
 processedTesting <- customPreProcess(testing)
-predict(rfModelFit, processedTesting)
+testPred <- predict(rfModelFit, processedTesting)
 ```
 
 ## Conclusions
 
 * Both models performed better than the benchmark.
 * For this problem, Random Forest was the best model to provide a solution.
-* Predictions for tests where (in the same order): B A C A A E D B A A D C B A E E A B B B.
+* Predictions for tests where (in the same order): `r testPred`.
